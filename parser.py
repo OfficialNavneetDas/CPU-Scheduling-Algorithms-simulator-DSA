@@ -1,6 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -36,34 +36,81 @@ def parse_algorithms(algorithm_chunk: str) -> List[Tuple[str, int]]:
         if not item:
             continue
         parts = item.split("-")
-        algorithm_id = parts[0][0]
-        quantum = int(parts[1]) if len(parts) > 1 and len(parts[1]) >= 1 else -1
+        algorithm_id = parts[0].strip()
+        if len(algorithm_id) != 1 or not algorithm_id.isdigit():
+            raise ValueError(f"Invalid algorithm specification: '{item}'")
+
+        if len(parts) > 1 and parts[1].strip():
+            try:
+                quantum = int(parts[1].strip())
+            except ValueError as exc:
+                raise ValueError(f"Invalid quantum value in '{item}'") from exc
+        else:
+            quantum = -1
+
         algorithms.append((algorithm_id, quantum))
+
+    if not algorithms:
+        raise ValueError("No valid algorithms specified.")
     return algorithms
 
 
-def parse_input() -> Tuple[str, List[Tuple[str, int]], int, List[Process]]:
-    """Reads problem configuration and processes from standard input."""
-    tokens = sys.stdin.read().split()
+def parse_input(raw_text: Optional[str] = None) -> Tuple[str, List[Tuple[str, int]], int, List[Process]]:
+    """Reads problem configuration and processes from raw_text or standard input."""
+    source = raw_text if raw_text is not None else sys.stdin.read()
+    tokens = source.split()
     if not tokens:
-        raise ValueError("No input provided on stdin.")
+        raise ValueError("Input is empty. Please provide scheduling configuration and processes.")
 
-    operation = tokens[0]
-    algorithm_chunk = tokens[1]
-    last_instant = int(tokens[2])
-    process_count = int(tokens[3])
+    if len(tokens) < 4:
+        raise ValueError(
+            "Incomplete header. Expected at least 4 lines/tokens: "
+            "<operation> <algorithms> <last_instant> <process_count>."
+        )
+
+    operation = tokens[0].strip()
+    if operation not in ("trace", "stats"):
+        raise ValueError(f"Invalid operation '{operation}'. Expected 'trace' or 'stats'.")
+
+    algorithm_chunk = tokens[1].strip()
+    try:
+        last_instant = int(tokens[2])
+        process_count = int(tokens[3])
+    except ValueError as exc:
+        raise ValueError("Both 'last_instant' and 'process_count' must be integers.") from exc
+
+    if last_instant <= 0 or process_count <= 0:
+        raise ValueError("'last_instant' and 'process_count' must be positive integers.")
+
+    if len(tokens) < 4 + process_count:
+        raise ValueError(
+            f"Expected {process_count} process definitions, but found {len(tokens) - 4}."
+        )
 
     algorithms = parse_algorithms(algorithm_chunk)
 
     processes: List[Process] = []
     for i in range(process_count):
         process_chunk = tokens[4 + i]
-        name, arrival_str, service_str = process_chunk.split(",")
+        parts = process_chunk.split(",")
+        if len(parts) != 3:
+            raise ValueError(
+                f"Invalid process format '{process_chunk}'. Expected 'Name,Arrival,Service'."
+            )
+        name, arrival_str, service_str = parts
+        try:
+            arrival_time = int(arrival_str.strip())
+            service_time = int(service_str.strip())
+        except ValueError as exc:
+            raise ValueError(
+                f"Arrival and service times must be integers in '{process_chunk}'."
+            ) from exc
+
         processes.append(
             Process(
                 name=name.strip(),
-                arrival_time=int(arrival_str),
-                service_time=int(service_str),
+                arrival_time=arrival_time,
+                service_time=service_time,
             )
         )
 
